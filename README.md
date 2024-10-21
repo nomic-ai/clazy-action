@@ -1,1 +1,3 @@
-# clazy-standalone-action
+# clazy-action
+
+A GitHub Action to run clazy.

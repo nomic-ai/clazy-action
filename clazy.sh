@@ -1,50 +1,36 @@
 #!/bin/bash
 
-options=()
-extra_args=()
-extra_args_before=()
+clazy_options=()
 
-for pair in $EXTRA_ARG; do
-    extra_args+=( "--extra-arg=$pair" )
+for arg in $EXTRA_ARG; do
+    clazy_options+=( "-extra-arg=$arg" )
+done
+for arg in $EXTRA_ARG_BEFORE; do
+    clazy_options+=( "-extra-arg-before=$arg" )
 done
 
-for pair in $EXTRA_ARG_BEFORE; do
-    extra_args_before+=( "--extra-arg-before=$pair" )
-done
-
-if [ "$ONLY_QT" == "true" ]; then
-    options+=( "--only-qt" )
+if [[ $ONLY_QT == "true" ]]; then
+    clazy_options+=( "--only-qt" )
+fi
+if [[ $QT4_COMPAT == "true" ]]; then
+    clazy_options+=( "--qt4-compat" )
+fi
+if [[ $VISIT_IMPLICIT_CODE == "true" ]]; then
+    clazy_options+=( "--visit-implicit-code" )
 fi
 
-if [ "$QT4_COMPAT" == "true" ]; then
-    options+=( "--qt4-compat" )
-fi
+args=(
+    -clang-tidy-binary "$GITHUB_ACTION_PATH/clazy-unbuffer.sh"
+    -checks="$CHECKS"
+    -warnings-as-errors="$WARNINGS_AS_ERRORS"
+    -p="$DATABASE"
+    -header-filter="$HEADER_FILTER"
+    --
+    "$PATH_REGEX"
+)
 
-if [ "$SUPPORTED_CHECKS_JSON" == "true" ]; then
-    options+=( "--supported-checks-json" )
-fi
-
-if [ "$VISIT_IMPLICIT_CODE" == "true" ]; then
-    options+=( "--visit-implicit-code" )
-fi
-
-if [ "$IGNORE_HEADERS" == "true" ] && [ -n "$DATABASE" ]; then
-    cp $DATABASE/compile_commands.json $DATABASE/compile_commands_backup.json
-    sed -i 's/-I\([^ ]*\)/-isystem\1/g' $DATABASE/compile_commands.json
-fi
-
-pattern='^(.*?):([0-9]+):([0-9]+): (.+): (.+) \[(.*)\]$'
-
-IFS=',' read -r -a extensions <<< "$EXTENSIONS"
-for ext in "${extensions[@]}"; do
-    while IFS= read -r -d '' file; do
-        files+=($(realpath "$file"))
-    done < <(find . -name "*.$ext" -print0)
-done
-
-output=$(clazy-standalone --checks="$CHECKS" -p="$DATABASE" \
-    --header-filter="$HEADER_FILTER" --ignore-dirs="$IGNORE_DIRS" \
-    "${options[@]}" "${extra_args[@]}" "${extra_args_before[@]}" "${files[@]}" 2>&1)
+exec 5>&1
+output=$(CLAZY_OPTIONS=${clazy_options[*]} run-clang-tidy "${args[@]}" 2>&1 | tee /dev/fd/5)
 
 warnings_file=$(mktemp)
 errors_file=$(mktemp)
@@ -55,6 +41,8 @@ echo 0 > "$warnings_file"
 echo 0 > "$errors_file"
 
 declare -A warnings_seen
+
+pattern='^(.*?):([0-9]+):([0-9]+): (.+): (.+) \[(.*)\]$'
 
 echo "$output" | grep -E "$pattern" | while IFS= read -r line; do
     if [[ $line =~ $pattern ]]; then

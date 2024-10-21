@@ -1,14 +1,15 @@
 name: 'Clazy action'
-description: 'GitHub Action for use clazy-standalone in Qt Projects'
+description: 'GitHub Action for use clazy in Qt Projects'
 inputs:
   version:
     description: 'Clazy version'
     required: true
     default: '1.11'
-  extensions:
-      description: Extensions.
-      required: false
-      default: "cpp,cxx,cc,h,hpp"
+  path-regex:
+    description: |
+      Regular expression matching the names of the source files to output diagnostics from.
+    required: false
+    default: ''
   checks:
     description: |
       Comma-separated list of clazy checks. Default is level1.
@@ -35,21 +36,10 @@ inputs:
       In this case, the version field is ignored.
     required: false
     default: false
-  ignore-headers:
-    description: |
-      Ignore thirdparty headers.
-    required: false
-    default: true
   header-filter:
     description: |
       Regular expression matching the names of the headers to output diagnostics from.
       Diagnostics from the main file of each translation unit are always displayed.
-    required: false
-    default: ''
-  ignore-dirs:
-    description: |
-      Regular expression matching the names of the
-      directories for which diagnostics should never be emitted. Useful for ignoring 3rdparty code.
     required: false
     default: ''
   only-qt:
@@ -60,11 +50,6 @@ inputs:
   qt4-compat:
     description: |
       Turns off checks not compatible with Qt 4
-    required: false
-    default: false
-  supported-checks-json:
-    description: |
-      Dump meta information about supported checks in JSON format.
     required: false
     default: false
   visit-implicit-code:
@@ -88,7 +73,7 @@ runs:
 
     - name: Cache files
       uses: actions/cache@v4
-      id: cache-clazy-standalone
+      id: cache-clazy
       with:
         path: ~/.local/clazy/
         key: ${{ runner.os }}-clazy-${{ inputs.version }}-${{ github.event.pull_request.number }}
@@ -97,9 +82,13 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends \
-        libclang-dev \
-        llvm-dev
+        sudo apt-get install -y --no-install-recommends clang-tidy expect
+
+    - name: Install build dependencies
+      shell: bash
+      if: ${{ inputs.install-stable != 'true' }}
+      run: |
+        sudo apt-get install -y --no-install-recommends libclang-dev llvm-dev
 
     - name: Install clazy
       if: ${{ inputs.install-stable }} == 'true'
@@ -110,7 +99,7 @@ runs:
 
     - name:  Build clazy
       shell: bash
-      if: ${{ steps.cache-clazy-standalone.outputs.cache-hit != 'true' && inputs.install-stable != 'true' }}
+      if: ${{ steps.cache-clazy.outputs.cache-hit != 'true' && inputs.install-stable != 'true' }}
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends \
@@ -124,7 +113,7 @@ runs:
         && cmake --build . --target install && cd .. && rm -rf ./clazy-${{ inputs.version }}
 
     - name: Save clazy
-      if: ${{ steps.cache-clazy-standalone.outputs.cache-hit != 'true' && inputs.install-stable != 'true' }}
+      if: ${{ steps.cache-clazy.outputs.cache-hit != 'true' && inputs.install-stable != 'true' }}
       uses: actions/cache@v4
       with:
         path: ~/.local/clazy
@@ -137,17 +126,13 @@ runs:
         CHECKS: ${{ inputs.checks }}
         EXTRA_ARG: ${{ inputs.extra-arg }}
         EXTRA_ARG_BEFORE: ${{ inputs.extra-arg-before }}
-        DATABASE: "${{ inputs.database }}"
-        EXTENSIONS: ${{inputs.extensions }}
-        EXTRA_OPTIONS: ${{ inputs.extra-options }}
+        DATABASE: ${{ inputs.database }}
         HEADER_FILTER: ${{ inputs.header-filter }}
-        IGNORE_DIRS: ${{ inputs.ignore-dirs}}
+        PATH_REGEX: ${{ inputs.path-regex }}
         ONLY_QT: ${{ inputs.only-qt }}
         QT4_COMPAT: ${{ inputs.qt4-compat }}
-        SUPPORTED_CHECKS_JSON: ${{ inputs.supported-checks-json }}
         VISIT_IMPLICIT_CODE: ${{ inputs.visit-implicit-code }}
-        CLAZY_CHECKS_AS_ERRORS: ${{ inputs.warnings_as_errors }}
-        IGNORE_HEADERS : ${{ inputs.ignore-headers }}
+        WARNINGS_AS_ERRORS: ${{ inputs.warnings_as_errors }}
       run: |
         PATH=~/.local/clazy/bin:$PATH "$GITHUB_ACTION_PATH/clazy.sh"
 
